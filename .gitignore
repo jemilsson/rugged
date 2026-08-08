@@ -4,3 +4,4 @@ dist/
 .anchor/
 test-ledger/
 *.log
+scripts/demo/out/
