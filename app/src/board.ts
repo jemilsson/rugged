@@ -94,6 +94,7 @@ let selectedCoinId: string = coins[0].id;
 let spectator = false;
 const heldKeys = new Set<string>();
 const camera: Point = { x: 0, y: 0 };
+let cameraInitialized = false;
 let lastStepSfxAt = 0;
 let boardEl: HTMLElement | null = null;
 let viewportEl: HTMLElement | null = null;
@@ -119,6 +120,15 @@ let lastShillEmoteAt = 0;
 let lastRugAt = -Infinity;
 let meetingOpen = false;
 let lastInputAt = 0;
+
+// Dev-only hook for screenshot/e2e verification: teleport the player and
+// force a task hold without needing to walk there in real time. Never
+// referenced by gameplay code.
+declare global {
+  interface Window {
+    __rugged?: { teleport(room: RoomName, tile: Tile): void; hold(taskId: string | null): void };
+  }
+}
 
 function ownCoin(): Coin {
   return coins.find((c) => c.id === selectedCoinId) ?? coins[0];
@@ -936,6 +946,7 @@ function renderToolbar(): void {
 
 function toggleSpectator(): void {
   spectator = !spectator;
+  if (!spectator) cameraInitialized = false;
   viewportEl?.classList.toggle('spectator', spectator);
   fogEl?.classList.toggle('hidden', spectator);
   const btn = document.querySelector<HTMLButtonElement>('.action-btn.spectator');
@@ -1125,8 +1136,15 @@ function updateCamera(): void {
     camera.y = 0;
     if (boardEl) boardEl.style.transform = `scale(${SPECTATOR_SCALE})`;
   } else {
-    camera.x += (targetX - camera.x) * CAMERA_LERP;
-    camera.y += (targetY - camera.y) * CAMERA_LERP;
+    if (!cameraInitialized) {
+      // Snap on the very first frame so the player starts centered instead of panning in from (0,0).
+      camera.x = targetX;
+      camera.y = targetY;
+      cameraInitialized = true;
+    } else {
+      camera.x += (targetX - camera.x) * CAMERA_LERP;
+      camera.y += (targetY - camera.y) * CAMERA_LERP;
+    }
     if (boardEl) boardEl.style.transform = `translate(${-camera.x}px, ${-camera.y}px)`;
   }
 }
@@ -1295,6 +1313,19 @@ function main(): void {
 
   const now = performance.now();
   for (const coin of coins) if (coin.isBot) scheduleWander(coin, now);
+
+  window.__rugged = {
+    teleport(room, tile) {
+      const c = ownCoin();
+      c.room = room;
+      c.pos = tileCenter(room, tile);
+      c.path = [];
+      cameraInitialized = false;
+    },
+    hold(taskId) {
+      mouseHoldTaskId = taskId;
+    },
+  };
 
   requestAnimationFrame(frame);
 }
