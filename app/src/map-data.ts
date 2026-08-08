@@ -45,7 +45,7 @@ export const ROOM_PX = 400;
 export const ROOM_INSET = 40; // 10% of ROOM_PX
 export const CORRIDOR_W = 100;
 /** How far a corridor rect reaches into its adjoining room's interior, so the two shapes overlap (never just touch). */
-const CORRIDOR_OVERLAP = 30;
+const CORRIDOR_OVERLAP = 80; // must exceed ROOM_INSET (40) or a non-walkable band blocks every doorway
 
 export const ROOMS: RoomDef[] = [
   { id: 'poh', label: 'Reactor', x: 100, y: 600 },
