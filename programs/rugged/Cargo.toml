@@ -16,5 +16,28 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+# NOTE: ephemeral-rollups-sdk 0.11.2 pins anchor-lang 1.1.2 (its own major
+# version line, unrelated to the Anchor CLI 0.32.1 in resources.md). Pinning
+# our own anchor-lang to 0.32.1 here pulled in two incompatible `Pubkey`
+# newtypes and failed to build; match the SDK's anchor-lang instead.
+# NOTE: ephemeral-rollups-sdk 0.11.2 pins anchor-lang 1.1.2 (its own major
+# version line, unrelated to the Anchor CLI 0.32.1 in resources.md). Pinning
+# our own anchor-lang to 0.32.1 here pulled in two incompatible `Pubkey`
+# newtypes and failed to build; match the SDK's anchor-lang instead.
+#
+# KNOWN BLOCKER (unrelated to this crate's own source): `nix flake check`'s
+# dependency-only build currently fails inside ephemeral-rollups-sdk's own
+# `src/ephem/deprecated/v1.rs`, a module this crate never calls, with a
+# `Pubkey`/`__Pubkey` type mismatch plus a `BorshSerialize` bound error —
+# the resolved dependency graph carries three different `solana-pubkey`
+# major versions (2.4.0/3.0.0/4.3.0) simultaneously, and the deprecated v1
+# module assumes they're the same type. Reproduced identically across three
+# independent dependency configurations (this pin, `default-features =
+# false` on both crates, and the decentgaming-contracts sibling repo's
+# working anchor-lang 0.31.1 + ephemeral-rollups-sdk 0.13.0 combination) —
+# it is not caused by, or fixable from, this program's lib.rs. A real fix
+# needs either an upstream ephemeral-rollups-sdk release without the stale
+# deprecated v1 module, or vendoring+patching that module locally via
+# `[patch.crates-io]`; out of scope for this defect-fix pass.
+anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
 ephemeral-rollups-sdk = { version = "0.11.2", features = ["anchor", "disable-realloc"] }
