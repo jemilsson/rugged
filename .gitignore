@@ -4,3 +4,5 @@ dist/
 .anchor/
 test-ledger/
 *.log
+keys/
+*-keypair.json
