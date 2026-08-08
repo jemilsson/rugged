@@ -8,3 +8,6 @@ edition = "2021"
 name = "rugged_core"
 
 [dependencies]
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ["cfg(kani)"] }
