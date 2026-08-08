@@ -51,8 +51,8 @@ const CORRIDOR_OVERLAP = 80; // must exceed ROOM_INSET (40) or a non-walkable ba
 export const ROOMS: RoomDef[] = [
   { id: 'poh', label: 'Proof of History', x: 100, y: 600 },
   { id: 'validator', label: 'The Validator Room', x: 550, y: 100 },
-  { id: 'compliance', label: 'The Escrow', x: 550, y: 600 },
-  { id: 'turbine', label: 'The Turbine', x: 550, y: 1100 },
+  { id: 'compliance', label: 'The Lockup', x: 550, y: 600 },
+  { id: 'turbine', label: 'The Printer', x: 550, y: 1100 },
   { id: 'recovery', label: 'The Liquidity Pool', x: 1000, y: 100 },
   { id: 'server', label: 'The RPC Room', x: 1000, y: 1100 },
   { id: 'conference', label: 'The Conference Room', x: 1450, y: 100 },
