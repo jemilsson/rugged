@@ -5,24 +5,46 @@
 
 import { roomImage } from './assets';
 import { audio } from './audio';
-import { EDGES, ROOMS, ROOM_TILES, TASK_TILES, isAdjacent, neighborsOf, type RoomDef, type Tile } from './map-data';
+import {
+  BOARD_H,
+  BOARD_W,
+  ROOM_INSET,
+  ROOMS,
+  ROOM_PX,
+  ROOM_TILES,
+  TASK_TILES,
+  buildRoutePath,
+  corridorRects,
+  isAdjacent,
+  neighborsOf,
+  roomInterior,
+  roomRect,
+  tileCenter as mapTileCenter,
+  walkableRects,
+  type Rect,
+  type Tile,
+} from './map-data';
 import { TICKERS, type TickerEntry } from './tickers';
 import type { RoomName } from './assets';
 
-const ROOM_PX = 300;
-const TILE_PX = ROOM_PX / 3;
-const CORRIDOR_PX = 90;
-const BOARD_PX = ROOM_PX * 2 + CORRIDOR_PX;
-const VIEWPORT_PX = 640;
+const TILE_PX = (ROOM_PX - 2 * 40) / 3; // matches ROOM_INSET in map-data.ts
+const VIEWPORT_PX = 720;
 const COIN_PX = TILE_PX * 0.8;
 
-const SPEED_PX_S = 250;
-const FOG_RADIUS = 350;
+const SPEED_PX_S = 280;
+const FOG_RADIUS = 380;
 const CAMERA_LERP = 0.1;
 const STEP_SFX_MS = 350;
 const WANDER_MIN_MS = 2000;
 const WANDER_MAX_MS = 4000;
 const ARRIVE_EPS = 2;
+const WANDER_FAR_CHANCE = 0.2;
+
+// Spectator view fits the whole (large) board into a fixed-size viewport via a scale transform.
+const SPECTATOR_MAX_PX = 860;
+const SPECTATOR_SCALE = Math.min(SPECTATOR_MAX_PX / BOARD_W, SPECTATOR_MAX_PX / BOARD_H);
+const SPECTATOR_W = BOARD_W * SPECTATOR_SCALE;
+const SPECTATOR_H = BOARD_H * SPECTATOR_SCALE;
 
 type Point = { x: number; y: number };
 
@@ -39,15 +61,12 @@ interface Coin {
   moving: boolean;
 }
 
-const roomById = new Map<RoomName, RoomDef>(ROOMS.map((r) => [r.id, r]));
-
 function tileCenter(room: RoomName, tile: Tile): Point {
-  const origin = roomOrigin(room);
-  return { x: origin.left + tile.x * TILE_PX + TILE_PX / 2, y: origin.top + tile.y * TILE_PX + TILE_PX / 2 };
+  return mapTileCenter(room, tile);
 }
 
 const coins: Coin[] = [
-  { id: 'c0', ticker: TICKERS[0], room: 'turbine', pos: tileCenter('turbine', { x: 0, y: 0 }), facingLeft: false, rugged: false, path: [], isBot: false, nextWanderAt: 0, moving: false },
+  { id: 'c0', ticker: TICKERS[0], room: 'conference', pos: tileCenter('conference', { x: 1, y: 1 }), facingLeft: false, rugged: false, path: [], isBot: false, nextWanderAt: 0, moving: false },
   { id: 'c1', ticker: TICKERS[1], room: 'gulfstream', pos: tileCenter('gulfstream', { x: 2, y: 0 }), facingLeft: true, rugged: false, path: [], isBot: true, nextWanderAt: 0, moving: false },
   { id: 'c2', ticker: TICKERS[2], room: 'gossip', pos: tileCenter('gossip', { x: 0, y: 2 }), facingLeft: false, rugged: false, path: [], isBot: true, nextWanderAt: 0, moving: false },
   { id: 'c3', ticker: TICKERS[3], room: 'poh', pos: tileCenter('poh', { x: 2, y: 2 }), facingLeft: true, rugged: false, path: [], isBot: true, nextWanderAt: 0, moving: false },
@@ -110,17 +129,18 @@ function injectStyles(): void {
       background: #05060a;
     }
     .viewport.spectator {
-      width: ${BOARD_PX}px;
-      height: ${BOARD_PX}px;
+      width: ${SPECTATOR_W}px;
+      height: ${SPECTATOR_H}px;
     }
 
     .board {
       position: absolute;
       left: 0;
       top: 0;
-      width: ${BOARD_PX}px;
-      height: ${BOARD_PX}px;
+      width: ${BOARD_W}px;
+      height: ${BOARD_H}px;
       background: #05060a;
+      transform-origin: top left;
     }
     .room {
       position: absolute;
@@ -132,10 +152,6 @@ function injectStyles(): void {
       border-radius: 10px;
       box-shadow: 0 0 18px rgba(120, 140, 255, 0.25), inset 0 0 30px rgba(0,0,0,0.5);
     }
-    .room[data-room="turbine"] { left: 0; top: 0; }
-    .room[data-room="gulfstream"] { left: ${ROOM_PX + CORRIDOR_PX}px; top: 0; }
-    .room[data-room="gossip"] { left: 0; top: ${ROOM_PX + CORRIDOR_PX}px; }
-    .room[data-room="poh"] { left: ${ROOM_PX + CORRIDOR_PX}px; top: ${ROOM_PX + CORRIDOR_PX}px; }
 
     .room-label {
       position: absolute;
@@ -153,12 +169,6 @@ function injectStyles(): void {
       background: #14161f;
       border: 1px dashed #4a4e68;
     }
-    .corridor.h { width: ${CORRIDOR_PX}px; height: 40px; top: ${ROOM_PX / 2 - 20}px; }
-    .corridor.v { height: ${CORRIDOR_PX}px; width: 40px; left: ${ROOM_PX / 2 - 20}px; }
-    .corridor[data-edge="turbine-gulfstream"] { left: ${ROOM_PX}px; top: ${ROOM_PX / 2 - 20}px; }
-    .corridor[data-edge="gossip-poh"] { left: ${ROOM_PX}px; top: ${ROOM_PX + CORRIDOR_PX + ROOM_PX / 2 - 20}px; }
-    .corridor[data-edge="turbine-gossip"] { top: ${ROOM_PX}px; left: ${ROOM_PX / 2 - 20}px; }
-    .corridor[data-edge="gulfstream-poh"] { top: ${ROOM_PX}px; left: ${ROOM_PX + CORRIDOR_PX + ROOM_PX / 2 - 20}px; }
 
     .tile {
       position: absolute;
@@ -254,19 +264,6 @@ function tileTint(index: number): string {
   return `${(index * 90) % 360}deg`;
 }
 
-function roomOrigin(room: RoomName): { left: number; top: number } {
-  const def = roomById.get(room)!;
-  return {
-    left: def.col === 0 ? 0 : ROOM_PX + CORRIDOR_PX,
-    top: def.row === 0 ? 0 : ROOM_PX + CORRIDOR_PX,
-  };
-}
-
-function roomRect(room: RoomName): { left: number; top: number; right: number; bottom: number } {
-  const origin = roomOrigin(room);
-  return { left: origin.left, top: origin.top, right: origin.left + ROOM_PX, bottom: origin.top + ROOM_PX };
-}
-
 function roomContaining(pos: Point): RoomName | null {
   for (const room of ROOMS) {
     const r = roomRect(room.id);
@@ -275,40 +272,30 @@ function roomContaining(pos: Point): RoomName | null {
   return null;
 }
 
-/** Waypoints (exit door, corridor midpoint, entry door) connecting two adjacent rooms. Null if same room. */
-function connectionWaypoints(fromRoom: RoomName, toRoom: RoomName): Point[] | null {
-  if (fromRoom === toRoom) return null;
-  const from = roomById.get(fromRoom)!;
-  const to = roomById.get(toRoom)!;
-  const dx = to.col - from.col;
-  const dy = to.row - from.row;
-  const fromOrigin = roomOrigin(fromRoom);
-  const toOrigin = roomOrigin(toRoom);
-  let exit: Point;
-  let enter: Point;
-  if (dx === 1) {
-    exit = { x: fromOrigin.left + ROOM_PX, y: fromOrigin.top + ROOM_PX / 2 };
-    enter = { x: toOrigin.left, y: toOrigin.top + ROOM_PX / 2 };
-  } else if (dx === -1) {
-    exit = { x: fromOrigin.left, y: fromOrigin.top + ROOM_PX / 2 };
-    enter = { x: toOrigin.left + ROOM_PX, y: toOrigin.top + ROOM_PX / 2 };
-  } else if (dy === 1) {
-    exit = { x: fromOrigin.left + ROOM_PX / 2, y: fromOrigin.top + ROOM_PX };
-    enter = { x: toOrigin.left + ROOM_PX / 2, y: toOrigin.top };
-  } else {
-    exit = { x: fromOrigin.left + ROOM_PX / 2, y: fromOrigin.top };
-    enter = { x: toOrigin.left + ROOM_PX / 2, y: toOrigin.top + ROOM_PX };
-  }
-  const mid: Point = { x: (exit.x + enter.x) / 2, y: (exit.y + enter.y) / 2 };
-  return [exit, mid, enter];
+function buildPath(coin: Coin, destRoom: RoomName, dest: Point): Point[] | null {
+  return buildRoutePath(coin.room, destRoom, dest);
 }
 
-function buildPath(coin: Coin, destRoom: RoomName, dest: Point): Point[] | null {
-  if (destRoom === coin.room) return [dest];
-  if (!isAdjacent(coin.room, destRoom)) return null;
-  const link = connectionWaypoints(coin.room, destRoom);
-  if (!link) return null;
-  return [...link, dest];
+// --- Collision: walkable surface = union of room interiors + corridor rects. ---
+
+const WALKABLE = walkableRects();
+
+function insideRect(pos: Point, r: Rect): boolean {
+  return pos.x >= r.left && pos.x <= r.right && pos.y >= r.top && pos.y <= r.bottom;
+}
+
+function isWalkable(pos: Point): boolean {
+  return WALKABLE.some((r) => insideRect(pos, r));
+}
+
+/** Clamps a move onto the walkable surface: full move if walkable, else slide per-axis (try x-only, then y-only), else stay put. */
+function clampToWalkable(from: Point, to: Point): Point {
+  if (isWalkable(to)) return to;
+  const xOnly: Point = { x: to.x, y: from.y };
+  if (isWalkable(xOnly)) return xOnly;
+  const yOnly: Point = { x: from.x, y: to.y };
+  if (isWalkable(yOnly)) return yOnly;
+  return from;
 }
 
 function renderBoard(): HTMLElement {
@@ -320,6 +307,8 @@ function renderBoard(): HTMLElement {
     const roomEl = document.createElement('div');
     roomEl.className = 'room';
     roomEl.dataset.room = room.id;
+    roomEl.style.left = `${room.x}px`;
+    roomEl.style.top = `${room.y}px`;
     roomEl.style.backgroundImage = `url(${roomImage(room.id)})`;
 
     const label = document.createElement('div');
@@ -332,12 +321,12 @@ function renderBoard(): HTMLElement {
       const tileEl = document.createElement('button');
       tileEl.className = 'tile';
       tileEl.type = 'button';
-      tileEl.style.left = `${tile.x * TILE_PX}px`;
-      tileEl.style.top = `${tile.y * TILE_PX}px`;
+      tileEl.style.left = `${ROOM_INSET + tile.x * TILE_PX}px`;
+      tileEl.style.top = `${ROOM_INSET + tile.y * TILE_PX}px`;
       tileEl.dataset.room = room.id;
       tileEl.dataset.x = String(tile.x);
       tileEl.dataset.y = String(tile.y);
-      if (task.x === tile.x && task.y === tile.y) {
+      if (task && task.x === tile.x && task.y === tile.y) {
         tileEl.classList.add('task');
         tileEl.dataset.task = task.name;
       }
@@ -348,12 +337,13 @@ function renderBoard(): HTMLElement {
     board.appendChild(roomEl);
   }
 
-  for (const edge of EDGES) {
+  for (const rect of corridorRects()) {
     const el = document.createElement('div');
-    const horizontal = new Set(['turbine-gulfstream', 'gossip-poh']);
-    const key = `${edge.from}-${edge.to}`;
-    el.className = `corridor ${horizontal.has(key) ? 'h' : 'v'}`;
-    el.dataset.edge = key;
+    el.className = 'corridor';
+    el.style.left = `${rect.left}px`;
+    el.style.top = `${rect.top}px`;
+    el.style.width = `${rect.right - rect.left}px`;
+    el.style.height = `${rect.bottom - rect.top}px`;
     board.appendChild(el);
   }
 
@@ -557,7 +547,8 @@ function scheduleWander(coin: Coin, now: number): void {
 function updateBot(coin: Coin, now: number): void {
   if (coin.rugged) return;
   if (coin.path.length === 0 && now >= coin.nextWanderAt) {
-    const candidates: RoomName[] = [coin.room, ...neighborsOf(coin.room)];
+    // Mostly bias to the current/adjacent rooms; occasionally roam anywhere on the 14-room map.
+    const candidates: RoomName[] = Math.random() < WANDER_FAR_CHANCE ? ROOMS.map((r) => r.id) : [coin.room, ...neighborsOf(coin.room)];
     const destRoom = candidates[Math.floor(Math.random() * candidates.length)];
     const tile = ROOM_TILES[Math.floor(Math.random() * ROOM_TILES.length)];
     const dest = tileCenter(destRoom, tile);
@@ -581,11 +572,10 @@ function updateCoin(coin: Coin, dt: number, now: number, isOwn: boolean): void {
     if (dir.x !== 0 || dir.y !== 0) {
       coin.path = [];
       if (dir.x !== 0) coin.facingLeft = dir.x < 0;
-      coin.pos = {
-        x: clamp(coin.pos.x + dir.x * distance, COIN_PX / 2, BOARD_PX - COIN_PX / 2),
-        y: clamp(coin.pos.y + dir.y * distance, COIN_PX / 2, BOARD_PX - COIN_PX / 2),
-      };
-      moved = true;
+      const attempted: Point = { x: coin.pos.x + dir.x * distance, y: coin.pos.y + dir.y * distance };
+      const next = clampToWalkable(coin.pos, attempted);
+      moved = next.x !== coin.pos.x || next.y !== coin.pos.y;
+      coin.pos = next;
     } else if (coin.path.length > 0) {
       moved = stepAlongPath(coin, distance);
     }
@@ -606,16 +596,17 @@ function updateCoin(coin: Coin, dt: number, now: number, isOwn: boolean): void {
 
 function updateCamera(): void {
   const own = ownCoin();
-  const targetX = clamp(own.pos.x - VIEWPORT_PX / 2, 0, Math.max(0, BOARD_PX - VIEWPORT_PX));
-  const targetY = clamp(own.pos.y - VIEWPORT_PX / 2, 0, Math.max(0, BOARD_PX - VIEWPORT_PX));
+  const targetX = clamp(own.pos.x - VIEWPORT_PX / 2, 0, Math.max(0, BOARD_W - VIEWPORT_PX));
+  const targetY = clamp(own.pos.y - VIEWPORT_PX / 2, 0, Math.max(0, BOARD_H - VIEWPORT_PX));
   if (spectator) {
     camera.x = 0;
     camera.y = 0;
+    if (boardEl) boardEl.style.transform = `scale(${SPECTATOR_SCALE})`;
   } else {
     camera.x += (targetX - camera.x) * CAMERA_LERP;
     camera.y += (targetY - camera.y) * CAMERA_LERP;
+    if (boardEl) boardEl.style.transform = `translate(${-camera.x}px, ${-camera.y}px)`;
   }
-  if (boardEl) boardEl.style.transform = `translate(${-camera.x}px, ${-camera.y}px)`;
 }
 
 function updateFog(): void {

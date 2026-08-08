@@ -1,7 +1,21 @@
 // Image preloader for room backgrounds, title, and coin states.
 // Warms the browser cache so scene transitions don't pop in.
 
-export type RoomName = 'turbine' | 'poh' | 'gossip' | 'gulfstream';
+export type RoomName =
+  | 'turbine'
+  | 'poh'
+  | 'gossip'
+  | 'gulfstream'
+  | 'conference'
+  | 'validator'
+  | 'server'
+  | 'vault'
+  | 'trading'
+  | 'airdrop'
+  | 'firewall'
+  | 'compliance'
+  | 'recovery'
+  | 'governance';
 export type CoinState = 'base' | 'rugged' | 'rugger-hint';
 
 const ROOM_IMAGES: Record<RoomName, string> = {
@@ -9,6 +23,16 @@ const ROOM_IMAGES: Record<RoomName, string> = {
   poh: '/img/room-poh.png',
   gossip: '/img/room-gossip.png',
   gulfstream: '/img/room-gulfstream.png',
+  conference: '/img/room-conference.png',
+  validator: '/img/room-validator.png',
+  server: '/img/room-server.png',
+  vault: '/img/room-vault.png',
+  trading: '/img/room-trading.png',
+  airdrop: '/img/room-airdrop.png',
+  firewall: '/img/room-firewall.png',
+  compliance: '/img/room-compliance.png',
+  recovery: '/img/room-recovery.png',
+  governance: '/img/room-governance.png',
 };
 
 const COIN_IMAGES: Record<CoinState, string> = {
