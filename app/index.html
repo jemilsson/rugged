@@ -2,7 +2,128 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rugged</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0d0a;
+        --panel: #10140f;
+        --fg: #c9ffb0;
+        --dim: #5f8f56;
+        --accent: #39ff6a;
+        --danger: #ff3b3b;
+        --border: #1e3319;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Courier New", ui-monospace, monospace;
+        min-height: 100vh;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 24px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 24px;
+        width: 100%;
+        max-width: 420px;
+      }
+      .panel.wide { max-width: 640px; }
+      h1 {
+        margin: 0 0 4px;
+        letter-spacing: 4px;
+        color: var(--accent);
+        text-shadow: 0 0 8px rgba(57, 255, 106, 0.4);
+      }
+      .dim { color: var(--dim); font-size: 0.6em; }
+      .tagline, .hint { color: var(--dim); font-size: 0.85em; }
+      .row { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+      input {
+        background: #06090a;
+        border: 1px solid var(--border);
+        color: var(--fg);
+        padding: 8px;
+        font-family: inherit;
+        flex: 1;
+        border-radius: 2px;
+      }
+      button {
+        background: transparent;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        padding: 8px 14px;
+        font-family: inherit;
+        cursor: pointer;
+        border-radius: 2px;
+      }
+      button:hover:not(:disabled) { background: rgba(57, 255, 106, 0.12); }
+      button:disabled { opacity: 0.35; cursor: not-allowed; }
+      button.target.selected { background: var(--accent); color: #06090a; }
+      #rugBtn { border-color: var(--danger); color: var(--danger); }
+      #rugBtn:hover:not(:disabled) { background: rgba(255, 59, 59, 0.15); }
+      .players { list-style: none; padding: 0; margin: 12px 0; }
+      .players li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px dashed var(--border);
+      }
+      .wallet { color: var(--dim); font-size: 0.75em; margin-top: 16px; }
+      .status { min-height: 1.2em; font-size: 0.8em; color: var(--dim); }
+      .status.error { color: var(--danger); }
+
+      .map {
+        position: relative;
+        height: 320px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: repeating-linear-gradient(0deg, transparent, transparent 19px, var(--border) 20px),
+          repeating-linear-gradient(90deg, transparent, transparent 19px, var(--border) 20px);
+        margin: 12px 0;
+      }
+      .room {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        border: 1px solid var(--dim);
+        border-radius: 4px;
+        padding: 8px;
+        min-width: 110px;
+        text-align: center;
+        background: rgba(16, 20, 15, 0.9);
+      }
+      .room.clickable { border-color: var(--accent); cursor: pointer; }
+      .room.clickable:hover { background: rgba(57, 255, 106, 0.1); }
+      .room-label { font-size: 0.7em; color: var(--dim); margin-bottom: 4px; }
+      .coins { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+      .coin {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #ffe97a, #b8860b);
+        color: #2a1e00;
+        font-size: 0.55em;
+        font-weight: bold;
+        border: 1px solid #7a5a00;
+      }
+      .coin.me-rugger { box-shadow: 0 0 8px 2px var(--danger); }
+      .rugger-tag { color: var(--danger); font-size: 0.7em; border: 1px solid var(--danger); padding: 1px 4px; border-radius: 2px; }
+      .hud { margin-top: 8px; }
+
+      .ticker-dead { font-size: 2em; color: var(--danger); text-align: center; margin: 8px 0; }
+      .chart { width: 100%; height: 80px; margin: 12px 0; filter: drop-shadow(0 0 6px var(--danger)); }
+      .win-line { font-size: 1.3em; color: var(--accent); text-align: center; margin: 20px 0; }
+    </style>
   </head>
   <body>
     <div id="app"></div>
