@@ -1,0 +1,10 @@
+[package]
+name = "rugged-core"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[lib]
+name = "rugged_core"
+
+[dependencies]

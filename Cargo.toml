@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["programs/rugged"]
+members = ["programs/rugged", "programs-core/rugged-core"]
 
 [profile.release]
 overflow-checks = true
