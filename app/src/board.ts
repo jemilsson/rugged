@@ -633,7 +633,7 @@ function updateTaskHold(coin: Coin, dt: number, now: number): void {
       ringEl.style.left = `${coin.pos.x - (COIN_PX + 30) / 2}px`;
       ringEl.style.top = `${coin.pos.y - (COIN_PX + 30) / 2}px`;
     }
-    if (activeId === 'pump') {
+    if (TASK_TILES.trading?.id === activeId) {
       renderMiniChart(coin, now);
     } else if (chartEl) {
       chartEl.parentElement?.classList.remove('active');

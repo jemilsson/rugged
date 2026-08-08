@@ -100,11 +100,11 @@ export const ROOM_TILES: Tile[] = [
 
 /** 5 named degen tasks; remaining 9 rooms are taskless for now. */
 export const TASK_TILES: Partial<Record<RoomName, TaskTile>> = {
-  trading: { id: 'pump', x: 1, y: 1, name: 'Pump your coin' },
+  trading: { id: 'ape', x: 1, y: 1, name: 'Ape in' },
   gossip: { id: 'shill', x: 1, y: 1, name: 'Shill' },
   turbine: { id: 'farm', x: 1, y: 1, name: 'Farm airdrops' },
   poh: { id: 'stake', x: 1, y: 1, name: 'Stake' },
-  airdrop: { id: 'claim', x: 1, y: 1, name: 'Claim airdrop' },
+  airdrop: { id: 'pump', x: 1, y: 1, name: 'Pump your coin' },
 };
 
 const roomById = new Map<RoomName, RoomDef>(ROOMS.map((r) => [r.id, r]));
