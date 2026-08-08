@@ -1,0 +1,4 @@
+{
+  "_note": "Ratchet baseline: gate fails if any (type+program+account+id+filename) key is new OR appears more times than its count here. Line numbers intentionally omitted (they churn on edits). Empty until the first triage pass.",
+  "findings": []
+}
