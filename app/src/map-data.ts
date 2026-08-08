@@ -54,14 +54,14 @@ export const ROOMS: RoomDef[] = [
   { id: 'compliance', label: 'Compliance', x: 550, y: 600 },
   { id: 'turbine', label: 'The Turbine', x: 550, y: 1100 },
   { id: 'recovery', label: 'The Recovery Room', x: 1000, y: 100 },
-  { id: 'server', label: 'The Server Room', x: 1000, y: 1100 },
+  { id: 'server', label: 'The RPC Room', x: 1000, y: 1100 },
   { id: 'conference', label: 'The Conference Room', x: 1450, y: 100 },
   { id: 'governance', label: 'Governance', x: 1450, y: 600 },
-  { id: 'vault', label: 'The Vault', x: 1450, y: 1100 },
+  { id: 'vault', label: 'Cold Storage', x: 1450, y: 1100 },
   { id: 'trading', label: 'The Trading Desk', x: 1900, y: 100 },
   { id: 'airdrop', label: 'The Pumping Station', x: 1900, y: 600 },
   { id: 'firewall', label: 'The Firewall', x: 1900, y: 1100 },
-  { id: 'gulfstream', label: 'Gulf Stream', x: 2350, y: 600 },
+  { id: 'gulfstream', label: 'The Launchpad', x: 2350, y: 600 },
   { id: 'gossip', label: 'The Gossip Room', x: 2350, y: 1100 },
 ];
 
@@ -105,6 +105,7 @@ export const TASK_TILES: Partial<Record<RoomName, TaskTile>> = {
   turbine: { id: 'farm', x: 1, y: 1, name: 'Farm airdrops' },
   poh: { id: 'stake', x: 1, y: 1, name: 'Stake' },
   airdrop: { id: 'pump', x: 1, y: 1, name: 'Pump your coin' },
+  gulfstream: { id: 'launch', x: 1, y: 1, name: 'Launch your token' },
 };
 
 const roomById = new Map<RoomName, RoomDef>(ROOMS.map((r) => [r.id, r]));

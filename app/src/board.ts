@@ -638,7 +638,7 @@ function updateTaskHold(coin: Coin, dt: number, now: number): void {
     } else if (chartEl) {
       chartEl.parentElement?.classList.remove('active');
     }
-    if (activeId === 'shill' && now - lastShillEmoteAt > 250) {
+    if (TASK_TILES.gossip?.id === activeId && now - lastShillEmoteAt > 250) {
       spawnShillEmote(coin);
       lastShillEmoteAt = now;
     }
