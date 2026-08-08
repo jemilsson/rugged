@@ -34,14 +34,15 @@ Movement runs in real time on a MagicBlock Ephemeral Rollup, 10-50ms per transac
 
 ## Program addresses
 
-PLACEHOLDER — fill in at devnet deploy.
+Keys generated (see `docs/deploy.md`); wallet still needs devnet funding
+before `anchor deploy` runs — the automated airdrop hit the faucet's daily
+rate limit (see `docs/deploy.md` for the manual faucet steps). This is the
+keypair-generation program ID, not yet a deployed-and-confirmed address;
+re-confirm against the on-chain deploy output before final submission.
 
-1. Run `anchor deploy --provider.cluster devnet` (or the project's Nix-driven equivalent).
-2. Copy the deployed program ID from the deploy output or `Anchor.toml` under `[programs.devnet]`.
-3. Paste it here as:
-   - **Program ID (devnet):** `<paste here>`
-   - **Cluster:** devnet
-   - **Explorer link:** `https://explorer.solana.com/address/<program-id>?cluster=devnet`
+- **Program ID (devnet):** `2RnTQ9votRb6V6sThvk73imhHXgs4C4wPuMH7KwL5GUE`
+- **Cluster:** devnet
+- **Explorer link:** `https://explorer.solana.com/address/2RnTQ9votRb6V6sThvk73imhHXgs4C4wPuMH7KwL5GUE?cluster=devnet`
 
 ## Judging-criteria mapping
 
