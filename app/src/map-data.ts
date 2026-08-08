@@ -25,6 +25,7 @@ export interface Tile {
 }
 
 export interface TaskTile extends Tile {
+  id: string;
   name: string;
 }
 
@@ -48,20 +49,20 @@ export const CORRIDOR_W = 100;
 const CORRIDOR_OVERLAP = 80; // must exceed ROOM_INSET (40) or a non-walkable band blocks every doorway
 
 export const ROOMS: RoomDef[] = [
-  { id: 'poh', label: 'Reactor', x: 100, y: 600 },
-  { id: 'validator', label: 'Upper Engine', x: 550, y: 100 },
-  { id: 'compliance', label: 'Security', x: 550, y: 600 },
-  { id: 'turbine', label: 'Lower Engine', x: 550, y: 1100 },
-  { id: 'recovery', label: 'Medbay', x: 1000, y: 100 },
-  { id: 'server', label: 'Electrical', x: 1000, y: 1100 },
-  { id: 'conference', label: 'Cafeteria', x: 1450, y: 100 },
-  { id: 'governance', label: 'Admin', x: 1450, y: 600 },
-  { id: 'vault', label: 'Storage', x: 1450, y: 1100 },
-  { id: 'trading', label: 'Weapons', x: 1900, y: 100 },
-  { id: 'airdrop', label: 'O2', x: 1900, y: 600 },
-  { id: 'firewall', label: 'Shields', x: 1900, y: 1100 },
-  { id: 'gulfstream', label: 'Navigation', x: 2350, y: 600 },
-  { id: 'gossip', label: 'Communications', x: 2350, y: 1100 },
+  { id: 'poh', label: 'Proof of History', x: 100, y: 600 },
+  { id: 'validator', label: 'The Validator Room', x: 550, y: 100 },
+  { id: 'compliance', label: 'Compliance', x: 550, y: 600 },
+  { id: 'turbine', label: 'The Turbine', x: 550, y: 1100 },
+  { id: 'recovery', label: 'The Recovery Room', x: 1000, y: 100 },
+  { id: 'server', label: 'The Server Room', x: 1000, y: 1100 },
+  { id: 'conference', label: 'The Conference Room', x: 1450, y: 100 },
+  { id: 'governance', label: 'Governance', x: 1450, y: 600 },
+  { id: 'vault', label: 'The Vault', x: 1450, y: 1100 },
+  { id: 'trading', label: 'The Trading Desk', x: 1900, y: 100 },
+  { id: 'airdrop', label: 'The Pumping Station', x: 1900, y: 600 },
+  { id: 'firewall', label: 'The Firewall', x: 1900, y: 1100 },
+  { id: 'gulfstream', label: 'Gulf Stream', x: 2350, y: 600 },
+  { id: 'gossip', label: 'The Gossip Room', x: 2350, y: 1100 },
 ];
 
 export const BOARD_W = 2350 + ROOM_PX + 150;
@@ -99,11 +100,11 @@ export const ROOM_TILES: Tile[] = [
 
 /** 5 named degen tasks; remaining 9 rooms are taskless for now. */
 export const TASK_TILES: Partial<Record<RoomName, TaskTile>> = {
-  gulfstream: { x: 1, y: 1, name: 'Pump your coin' },
-  gossip: { x: 1, y: 1, name: 'Shill' },
-  turbine: { x: 1, y: 1, name: 'Farm airdrops' },
-  poh: { x: 1, y: 1, name: 'Stake' },
-  airdrop: { x: 1, y: 1, name: 'Claim airdrop' },
+  trading: { id: 'pump', x: 1, y: 1, name: 'Pump your coin' },
+  gossip: { id: 'shill', x: 1, y: 1, name: 'Shill' },
+  turbine: { id: 'farm', x: 1, y: 1, name: 'Farm airdrops' },
+  poh: { id: 'stake', x: 1, y: 1, name: 'Stake' },
+  airdrop: { id: 'claim', x: 1, y: 1, name: 'Claim airdrop' },
 };
 
 const roomById = new Map<RoomName, RoomDef>(ROOMS.map((r) => [r.id, r]));

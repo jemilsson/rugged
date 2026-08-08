@@ -1,7 +1,8 @@
-// Local demo board: 4 rooms + corridors, walkable 3x3 tile grids, smooth
+// Local demo board: 14-room Skeld topology, walkable 3x3 tile grids, smooth
 // continuous movement (WASD/arrows + click-to-walk), camera follow, fog of
-// war, and a Rug button. No chain calls — this is a client-only prototype
-// for the board layout, movement feel, and sprite layering.
+// war, tasks, rug/report keybinds, and fullscreen. No chain calls — this is
+// a client-only prototype for board layout, movement feel, and sprite
+// layering.
 
 import { roomImage } from './assets';
 import { audio } from './audio';
@@ -17,7 +18,6 @@ import {
   corridorRects,
   isAdjacent,
   neighborsOf,
-  roomInterior,
   roomRect,
   tileCenter as mapTileCenter,
   walkableRects,
@@ -28,8 +28,8 @@ import { TICKERS, type TickerEntry } from './tickers';
 import type { RoomName } from './assets';
 
 const TILE_PX = (ROOM_PX - 2 * 40) / 3; // matches ROOM_INSET in map-data.ts
-const VIEWPORT_PX = 720;
-const COIN_PX = TILE_PX * 0.8;
+const DEFAULT_VIEWPORT_PX = 720;
+const COIN_PX = 115;
 
 const SPEED_PX_S = 280;
 const FOG_RADIUS = 380;
@@ -39,6 +39,13 @@ const WANDER_MIN_MS = 2000;
 const WANDER_MAX_MS = 4000;
 const ARRIVE_EPS = 2;
 const WANDER_FAR_CHANCE = 0.2;
+
+const TASK_HOLD_MS = 3000;
+const RUG_RANGE_PX = 120;
+const RUG_COOLDOWN_MS = 25000;
+const REPORT_RANGE_PX = 150;
+const LEGEND_IDLE_MS = 10000;
+const RECOGNIZED_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e', 'q', 'r', 'f']);
 
 // Spectator view fits the whole (large) board into a fixed-size viewport via a scale transform.
 const SPECTATOR_MAX_PX = 860;
@@ -61,6 +68,12 @@ interface Coin {
   moving: boolean;
 }
 
+interface TaskDef {
+  id: string;
+  name: string;
+  room: RoomName | null; // null = whitepaper, available anywhere, instant
+}
+
 function tileCenter(room: RoomName, tile: Tile): Point {
   return mapTileCenter(room, tile);
 }
@@ -72,6 +85,11 @@ const coins: Coin[] = [
   { id: 'c3', ticker: TICKERS[3], room: 'poh', pos: tileCenter('poh', { x: 2, y: 2 }), facingLeft: true, rugged: false, path: [], isBot: true, nextWanderAt: 0, moving: false },
 ];
 
+const TASKS: TaskDef[] = [
+  ...Object.entries(TASK_TILES).map(([room, t]) => ({ id: t!.id, name: t!.name, room: room as RoomName })),
+  { id: 'whitepaper', name: 'Update whitepaper', room: null },
+];
+
 let selectedCoinId: string = coins[0].id;
 let spectator = false;
 const heldKeys = new Set<string>();
@@ -79,7 +97,28 @@ const camera: Point = { x: 0, y: 0 };
 let lastStepSfxAt = 0;
 let boardEl: HTMLElement | null = null;
 let viewportEl: HTMLElement | null = null;
+let stageEl: HTMLElement | null = null;
 let fogEl: HTMLElement | null = null;
+let ringEl: HTMLElement | null = null;
+let chartEl: SVGSVGElement | null = null;
+let legendEl: HTMLElement | null = null;
+let taskListEl: HTMLElement | null = null;
+let progressBarEl: HTMLElement | null = null;
+let winEl: HTMLElement | null = null;
+let meetingEl: HTMLElement | null = null;
+let rugBtnEl: HTMLButtonElement | null = null;
+let fullscreenBtnEl: HTMLButtonElement | null = null;
+
+const tasksDone = new Set<string>();
+let holdTaskId: string | null = null;
+let holdStartedAt = 0;
+let mouseHoldTaskId: string | null = null;
+let chartPoints: number[] = [];
+let lastChartTickAt = 0;
+let lastShillEmoteAt = 0;
+let lastRugAt = -Infinity;
+let meetingOpen = false;
+let lastInputAt = 0;
 
 function ownCoin(): Coin {
   return coins.find((c) => c.id === selectedCoinId) ?? coins[0];
@@ -113,17 +152,33 @@ function injectStyles(): void {
       font-size: 14px;
     }
     .toolbar button:hover { background: #2a2c3c; }
-    .toolbar button.rug { border-color: #a33; color: #ff8080; }
     .toolbar button.active { outline: 2px solid #7cf; }
     .coin-select { display: flex; gap: 6px; }
     .coin-select button.active { outline: 2px solid #fff; }
     .hint { font-size: 12px; color: #8a8ea8; }
 
+    .stage {
+      position: relative;
+      width: min(${DEFAULT_VIEWPORT_PX}px, 92vw);
+    }
+    .stage:fullscreen, .stage:-webkit-full-screen {
+      width: 100vw;
+      height: 100vh;
+      background: #05060a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .stage:fullscreen .viewport, .stage:-webkit-full-screen .viewport {
+      width: 96vw;
+      height: 96vh;
+    }
+
     .viewport {
       position: relative;
-      width: ${VIEWPORT_PX}px;
-      height: ${VIEWPORT_PX}px;
-      max-width: 100%;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      max-height: 78vh;
       overflow: hidden;
       border-radius: 8px;
       background: #05060a;
@@ -131,6 +186,8 @@ function injectStyles(): void {
     .viewport.spectator {
       width: ${SPECTATOR_W}px;
       height: ${SPECTATOR_H}px;
+      max-width: 100%;
+      aspect-ratio: auto;
     }
 
     .board {
@@ -219,8 +276,11 @@ function injectStyles(): void {
       width: 100%;
       height: 100%;
       object-fit: contain;
-      filter: hue-rotate(var(--tint, 0deg)) saturate(1.4);
+      filter: drop-shadow(0 0 6px var(--tint, #7cf));
       transition: transform 200ms ease;
+    }
+    .coin.selected .coin-body {
+      filter: drop-shadow(0 0 12px var(--tint, #7cf)) drop-shadow(0 0 4px var(--tint, #7cf));
     }
     .coin .coin-face {
       position: absolute;
@@ -256,12 +316,213 @@ function injectStyles(): void {
       z-index: 5;
     }
     .fog.hidden { display: none; }
+
+    /* --- Task ring + mini chart + emotes --- */
+    .task-ring {
+      position: absolute;
+      width: ${COIN_PX + 30}px;
+      height: ${COIN_PX + 30}px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 6;
+      display: none;
+      background: conic-gradient(#ffe27a var(--pct, 0%), rgba(255,255,255,0.12) 0);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+    }
+    .task-ring.active { display: block; }
+
+    .mini-chart {
+      position: absolute;
+      width: 90px;
+      height: 48px;
+      background: rgba(5,8,6,0.85);
+      border: 1px solid #3ef07a;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 7;
+      display: none;
+    }
+    .mini-chart.active { display: block; }
+
+    .shill-emote {
+      position: absolute;
+      font-size: 18px;
+      pointer-events: none;
+      z-index: 7;
+      animation: emote-float 900ms ease-out forwards;
+    }
+    @keyframes emote-float {
+      from { transform: translate(-50%, 0); opacity: 1; }
+      to { transform: translate(-50%, -46px); opacity: 0; }
+    }
+
+    /* --- HUD: task list top-left --- */
+    .task-hud {
+      position: absolute;
+      top: 10px; left: 10px;
+      z-index: 8;
+      background: rgba(8,9,14,0.82);
+      border: 1px solid #3a3c50;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      min-width: 168px;
+      pointer-events: none;
+    }
+    .task-hud h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; color: #9aa0c4; text-transform: uppercase; }
+    .task-hud ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+    .task-hud li { color: #b8bce0; }
+    .task-hud li.done { color: #7effa0; text-decoration: line-through; text-decoration-color: rgba(126,255,160,0.5); }
+    .task-hud li .mark { display: inline-block; width: 14px; }
+
+    /* --- Global task progress bar top-center --- */
+    .progress-wrap {
+      position: absolute;
+      top: 10px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 8;
+      width: 46%;
+      min-width: 180px;
+      pointer-events: none;
+    }
+    .progress-track {
+      height: 10px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid #3a3c50;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3ef07a, #ffe27a);
+      width: 0%;
+      transition: width 300ms ease;
+    }
+    .progress-label {
+      text-align: center;
+      font-size: 10px;
+      color: #9aa0c4;
+      margin-top: 3px;
+    }
+
+    /* --- Win screen --- */
+    .win-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(4,6,10,0.92);
+      text-align: center;
+    }
+    .win-overlay.active { display: flex; }
+    .win-overlay .win-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: #7effa0;
+      text-shadow: 0 0 20px rgba(126,255,160,0.6);
+      letter-spacing: 0.03em;
+    }
+
+    /* --- Meeting overlay --- */
+    .meeting-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 22;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: rgba(4,6,10,0.94);
+    }
+    .meeting-overlay.active { display: flex; }
+    .meeting-title { font-size: 20px; font-weight: 700; color: #ff8080; letter-spacing: 0.05em; }
+    .portrait-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 90%; }
+    .portrait {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      border: 2px solid #4a4e68;
+      object-fit: contain;
+      background: #12131c;
+    }
+    .portrait.is-rugged { border-color: #a33; filter: grayscale(1) brightness(0.6); }
+    .skip-vote {
+      background: #1a1c28;
+      color: #e8e8f0;
+      border: 1px solid #7cf;
+      border-radius: 6px;
+      padding: 10px 22px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .skip-vote:hover { background: #2a2c3c; }
+
+    /* --- Controls legend bottom-left --- */
+    .legend {
+      position: absolute;
+      bottom: 10px; left: 10px;
+      z-index: 9;
+      background: rgba(4,10,6,0.85);
+      border: 1px solid #2f7a4a;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: #6ef08a;
+      text-shadow: 0 0 4px rgba(110,240,138,0.4);
+      opacity: 1;
+      transition: opacity 600ms ease;
+      pointer-events: none;
+    }
+    .legend.dim { opacity: 0.25; }
+    .legend.flash { border-color: #ffe27a; color: #ffe27a; }
+
+    /* --- Action buttons bottom-right --- */
+    .action-buttons {
+      position: absolute;
+      bottom: 10px; right: 10px;
+      z-index: 9;
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      position: relative;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #1a1c28;
+      border: 1px solid #3a3c50;
+      color: #e8e8f0;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .action-btn .key-hint {
+      position: absolute;
+      bottom: 2px; right: 4px;
+      font-size: 8px;
+      color: #8a8ea8;
+      font-weight: 400;
+    }
+    .action-btn.rug { border-color: #a33; color: #ff8080; }
+    .action-btn.rug:disabled { color: #6a4a4a; border-color: #4a3232; cursor: not-allowed; }
+    .action-btn .cd-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(rgba(0,0,0,0.65) var(--cd, 0%), transparent 0);
+      pointer-events: none;
+    }
+    .action-btn:disabled { opacity: 0.55; }
   `;
   document.head.appendChild(style);
-}
-
-function tileTint(index: number): string {
-  return `${(index * 90) % 360}deg`;
 }
 
 function roomContaining(pos: Point): RoomName | null {
@@ -298,6 +559,141 @@ function clampToWalkable(from: Point, to: Point): Point {
   return from;
 }
 
+// --- Tasks ---
+
+/** The task tile the coin is currently standing on, if any. */
+function taskTileAt(coin: Coin): TaskDef | null {
+  const tile = TASK_TILES[coin.room];
+  if (!tile) return null;
+  const r = roomRect(coin.room);
+  const cellX = Math.floor((coin.pos.x - r.left - ROOM_INSET) / TILE_PX);
+  const cellY = Math.floor((coin.pos.y - r.top - ROOM_INSET) / TILE_PX);
+  return cellX === tile.x && cellY === tile.y ? { id: tile.id, name: tile.name, room: coin.room } : null;
+}
+
+function completeTask(id: string): void {
+  if (tasksDone.has(id)) return;
+  tasksDone.add(id);
+  audio.play('rug'); // reuse existing sfx as a completion chime (no dedicated asset yet)
+  renderTaskHud();
+  if (tasksDone.size >= TASKS.length) showWin();
+}
+
+function renderTaskHud(): void {
+  if (taskListEl) {
+    taskListEl.innerHTML = '';
+    for (const task of TASKS) {
+      const li = document.createElement('li');
+      const done = tasksDone.has(task.id);
+      li.className = done ? 'done' : '';
+      const mark = document.createElement('span');
+      mark.className = 'mark';
+      mark.textContent = done ? '✓' : '·';
+      li.appendChild(mark);
+      li.appendChild(document.createTextNode(task.name));
+      taskListEl.appendChild(li);
+    }
+  }
+  if (progressBarEl) {
+    const pct = Math.round((tasksDone.size / TASKS.length) * 100);
+    const fill = progressBarEl.querySelector<HTMLElement>('.progress-fill');
+    const label = progressBarEl.querySelector<HTMLElement>('.progress-label');
+    if (fill) fill.style.width = `${pct}%`;
+    if (label) label.textContent = `Crew tasks ${tasksDone.size}/${TASKS.length}`;
+  }
+}
+
+function showWin(): void {
+  winEl?.classList.add('active');
+}
+
+function updateTaskHold(coin: Coin, dt: number, now: number): void {
+  if (coin.rugged || meetingOpen) {
+    holdTaskId = null;
+    if (ringEl) ringEl.classList.remove('active');
+    if (chartEl) chartEl.parentElement?.classList.remove('active');
+    return;
+  }
+  const onTile = taskTileAt(coin);
+  const eHeld = heldKeys.has('e');
+  const activeId = mouseHoldTaskId ?? (eHeld && onTile ? onTile.id : null);
+
+  if (activeId && !tasksDone.has(activeId)) {
+    if (holdTaskId !== activeId) {
+      holdTaskId = activeId;
+      holdStartedAt = now;
+      chartPoints = [24];
+      lastChartTickAt = now;
+    }
+    const elapsed = now - holdStartedAt;
+    const pct = Math.min(100, (elapsed / TASK_HOLD_MS) * 100);
+    if (ringEl) {
+      ringEl.classList.add('active');
+      ringEl.style.setProperty('--pct', `${pct}%`);
+      ringEl.style.left = `${coin.pos.x - (COIN_PX + 30) / 2}px`;
+      ringEl.style.top = `${coin.pos.y - (COIN_PX + 30) / 2}px`;
+    }
+    if (activeId === 'pump') {
+      renderMiniChart(coin, now);
+    } else if (chartEl) {
+      chartEl.parentElement?.classList.remove('active');
+    }
+    if (activeId === 'shill' && now - lastShillEmoteAt > 250) {
+      spawnShillEmote(coin);
+      lastShillEmoteAt = now;
+    }
+    if (elapsed >= TASK_HOLD_MS) {
+      completeTask(activeId);
+      holdTaskId = null;
+      mouseHoldTaskId = null;
+      if (ringEl) ringEl.classList.remove('active');
+      if (chartEl) chartEl.parentElement?.classList.remove('active');
+    }
+  } else {
+    holdTaskId = null;
+    if (ringEl) ringEl.classList.remove('active');
+    if (chartEl) chartEl.parentElement?.classList.remove('active');
+  }
+}
+
+function renderMiniChart(coin: Coin, now: number): void {
+  if (!chartEl) return;
+  const wrap = chartEl.parentElement;
+  if (!wrap) return;
+  wrap.classList.add('active');
+  wrap.style.left = `${coin.pos.x + COIN_PX / 2 + 6}px`;
+  wrap.style.top = `${coin.pos.y - 60}px`;
+  if (now - lastChartTickAt > 120) {
+    const last = chartPoints[chartPoints.length - 1] ?? 24;
+    chartPoints.push(Math.min(46, last + Math.random() * 6));
+    if (chartPoints.length > 14) chartPoints.shift();
+    lastChartTickAt = now;
+  }
+  const w = 90;
+  const h = 48;
+  const step = w / Math.max(1, chartPoints.length - 1);
+  const pts = chartPoints.map((v, i) => `${i * step},${h - v}`).join(' ');
+  chartEl.innerHTML = `<polyline points="${pts}" fill="none" stroke="#3ef07a" stroke-width="2" /><text x="4" y="12" font-size="9" fill="#3ef07a">📈</text>`;
+}
+
+function spawnShillEmote(coin: Coin): void {
+  if (!boardEl) return;
+  const el = document.createElement('div');
+  el.className = 'shill-emote';
+  el.textContent = '🚀';
+  el.style.left = `${coin.pos.x + (Math.random() * 30 - 15)}px`;
+  el.style.top = `${coin.pos.y - COIN_PX / 2}px`;
+  boardEl.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+
+function attemptWhitepaper(coin: Coin): void {
+  if (coin.rugged || meetingOpen) return;
+  if (taskTileAt(coin)) return; // E on a room task tile drives the hold flow instead
+  if (tasksDone.has('whitepaper')) return;
+  completeTask('whitepaper');
+}
+
 function renderBoard(): HTMLElement {
   const board = document.createElement('div');
   board.className = 'board';
@@ -326,9 +722,19 @@ function renderBoard(): HTMLElement {
       tileEl.dataset.room = room.id;
       tileEl.dataset.x = String(tile.x);
       tileEl.dataset.y = String(tile.y);
-      if (task && task.x === tile.x && task.y === tile.y) {
+      const isTaskTile = !!task && task.x === tile.x && task.y === tile.y;
+      if (isTaskTile) {
         tileEl.classList.add('task');
-        tileEl.dataset.task = task.name;
+        tileEl.dataset.task = task!.name;
+        tileEl.addEventListener('mousedown', () => {
+          const own = ownCoin();
+          if (own.room === room.id && taskTileAt(own)?.id === task!.id) mouseHoldTaskId = task!.id;
+        });
+        const clearHold = () => {
+          if (mouseHoldTaskId === task!.id) mouseHoldTaskId = null;
+        };
+        tileEl.addEventListener('mouseup', clearHold);
+        tileEl.addEventListener('mouseleave', clearHold);
       }
       tileEl.addEventListener('click', () => onTileClick(room.id, tile));
       roomEl.appendChild(tileEl);
@@ -351,6 +757,19 @@ function renderBoard(): HTMLElement {
     board.appendChild(renderCoin(coin));
   }
 
+  ringEl = document.createElement('div');
+  ringEl.className = 'task-ring';
+  board.appendChild(ringEl);
+
+  const chartWrap = document.createElement('div');
+  chartWrap.className = 'mini-chart';
+  chartEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
+  chartEl.setAttribute('viewBox', '0 0 90 48');
+  chartEl.setAttribute('width', '90');
+  chartEl.setAttribute('height', '48');
+  chartWrap.appendChild(chartEl);
+  board.appendChild(chartWrap);
+
   return board;
 }
 
@@ -358,7 +777,7 @@ function renderCoin(coin: Coin): HTMLElement {
   const el = document.createElement('div');
   el.className = 'coin';
   el.id = `coin-${coin.id}`;
-  el.style.setProperty('--tint', tileTint(coins.indexOf(coin)));
+  el.style.setProperty('--tint', coin.ticker.color);
 
   const sprite = document.createElement('div');
   sprite.className = 'coin-sprite';
@@ -408,36 +827,78 @@ function selectCoin(id: string): void {
 
 function onTileClick(room: RoomName, tile: Tile): void {
   const coin = ownCoin();
-  if (coin.rugged) return;
+  if (coin.rugged || meetingOpen) return;
   const dest = tileCenter(room, tile);
   const path = buildPath(coin, room, dest);
   if (!path) return;
   coin.path = path;
 }
 
-function nearestCoinTo(coin: Coin): Coin | null {
+function nearestCoinTo(coin: Coin, maxRange = Infinity): Coin | null {
   const others = coins.filter((c) => c.id !== coin.id && !c.rugged);
-  if (others.length === 0) return null;
-  const sameRoom = others.filter((c) => c.room === coin.room);
-  const pool = sameRoom.length > 0 ? sameRoom : others;
-  return pool.reduce((best, c) => {
+  const inRange = others.filter((c) => Math.hypot(c.pos.x - coin.pos.x, c.pos.y - coin.pos.y) <= maxRange);
+  if (inRange.length === 0) return null;
+  return inRange.reduce((best, c) => {
     const d = Math.hypot(c.pos.x - coin.pos.x, c.pos.y - coin.pos.y);
     const bd = Math.hypot(best.pos.x - coin.pos.x, best.pos.y - coin.pos.y);
     return d < bd ? c : best;
   });
 }
 
-function rugNearest(): void {
-  const selected = ownCoin();
-  const target = nearestCoinTo(selected);
-  if (!target) return;
+function rugCooldownRemaining(now: number): number {
+  return Math.max(0, RUG_COOLDOWN_MS - (now - lastRugAt));
+}
+
+function canRug(now: number): { target: Coin | null; ready: boolean } {
+  const target = nearestCoinTo(ownCoin(), RUG_RANGE_PX);
+  return { target, ready: target !== null && rugCooldownRemaining(now) <= 0 };
+}
+
+function attemptRug(now: number): void {
+  if (meetingOpen) return;
+  const { target, ready } = canRug(now);
+  if (!ready || !target) return;
 
   target.rugged = true;
   target.path = [];
+  lastRugAt = now;
   audio.play('rug');
   const el = document.getElementById(`coin-${target.id}`);
   const body = el?.querySelector<HTMLImageElement>('.coin-body');
   if (body) body.src = '/img/coin-rugged.png';
+}
+
+function attemptReport(now: number): void {
+  if (meetingOpen) return;
+  const own = ownCoin();
+  const corpse = coins
+    .filter((c) => c.rugged)
+    .find((c) => Math.hypot(c.pos.x - own.pos.x, c.pos.y - own.pos.y) <= REPORT_RANGE_PX);
+  if (!corpse) return;
+  void now;
+  openMeeting();
+}
+
+function openMeeting(): void {
+  meetingOpen = true;
+  if (!meetingEl) return;
+  const row = meetingEl.querySelector<HTMLElement>('.portrait-row');
+  if (row) {
+    row.innerHTML = '';
+    for (const coin of coins) {
+      const img = document.createElement('img');
+      img.className = `portrait${coin.rugged ? ' is-rugged' : ''}`;
+      img.src = coin.rugged ? coin.ticker.sprite.replace('/tokens/', '/tokens/').replace('.png', '-glow.png') : coin.ticker.sprite;
+      img.title = coin.ticker.ticker;
+      row.appendChild(img);
+    }
+  }
+  meetingEl.classList.add('active');
+}
+
+function closeMeeting(): void {
+  meetingOpen = false;
+  meetingEl?.classList.remove('active');
 }
 
 let toolbarEl: HTMLElement | null = null;
@@ -458,12 +919,6 @@ function renderToolbar(): void {
   }
   toolbarEl.appendChild(select);
 
-  const rugBtn = document.createElement('button');
-  rugBtn.className = 'rug';
-  rugBtn.textContent = 'Rug';
-  rugBtn.addEventListener('click', rugNearest);
-  toolbarEl.appendChild(rugBtn);
-
   const musicBtn = document.createElement('button');
   musicBtn.textContent = audio.isMuted() ? 'Music: off' : 'Music: on';
   musicBtn.addEventListener('click', () => {
@@ -472,12 +927,6 @@ function renderToolbar(): void {
     musicBtn.textContent = muted ? 'Music: off' : 'Music: on';
   });
   toolbarEl.appendChild(musicBtn);
-
-  const spectatorBtn = document.createElement('button');
-  spectatorBtn.className = spectator ? 'active' : '';
-  spectatorBtn.textContent = 'Spectator (S)';
-  spectatorBtn.addEventListener('click', toggleSpectator);
-  toolbarEl.appendChild(spectatorBtn);
 
   const hint = document.createElement('span');
   hint.className = 'hint';
@@ -489,7 +938,73 @@ function toggleSpectator(): void {
   spectator = !spectator;
   viewportEl?.classList.toggle('spectator', spectator);
   fogEl?.classList.toggle('hidden', spectator);
-  renderToolbar();
+  const btn = document.querySelector<HTMLButtonElement>('.action-btn.spectator');
+  btn?.classList.toggle('active', spectator);
+}
+
+function toggleFullscreen(): void {
+  if (!stageEl) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    stageEl.requestFullscreen().catch(() => {});
+  }
+}
+
+// --- Action buttons + legend ---
+
+function renderActionButtons(container: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'action-buttons';
+
+  const makeBtn = (cls: string, label: string, keyHint: string, onClick: () => void): HTMLButtonElement => {
+    const btn = document.createElement('button');
+    btn.className = `action-btn ${cls}`;
+    btn.type = 'button';
+    const ring = document.createElement('div');
+    ring.className = 'cd-ring';
+    btn.appendChild(ring);
+    const text = document.createElement('span');
+    text.textContent = label;
+    btn.appendChild(text);
+    const hint = document.createElement('span');
+    hint.className = 'key-hint';
+    hint.textContent = keyHint;
+    btn.appendChild(hint);
+    btn.addEventListener('click', onClick);
+    wrap.appendChild(btn);
+    return btn;
+  };
+
+  makeBtn('task', 'E', 'task', () => attemptWhitepaper(ownCoin()));
+  rugBtnEl = makeBtn('rug', 'Q', 'rug', () => attemptRug(performance.now()));
+  makeBtn('report', 'R', 'report', () => attemptReport(performance.now()));
+  makeBtn('spectator', 'S', 'spectate', toggleSpectator);
+  fullscreenBtnEl = makeBtn('fullscreen', 'F', 'full', toggleFullscreen);
+
+  container.appendChild(wrap);
+}
+
+function renderLegend(container: HTMLElement): void {
+  legendEl = document.createElement('div');
+  legendEl.className = 'legend';
+  legendEl.textContent = 'WASD move · E task · Q rug · R report · F fullscreen · S spectator';
+  container.appendChild(legendEl);
+}
+
+function updateLegendIdle(now: number): void {
+  if (!legendEl) return;
+  legendEl.classList.toggle('dim', now - lastInputAt > LEGEND_IDLE_MS);
+}
+
+function updateActionButtons(now: number): void {
+  const { target, ready } = canRug(now);
+  if (rugBtnEl) {
+    rugBtnEl.disabled = !ready;
+    const cd = rugCooldownRemaining(now);
+    const cdPct = target === null && cd <= 0 ? 0 : (cd / RUG_COOLDOWN_MS) * 100;
+    rugBtnEl.style.setProperty('--cd', `${cdPct}%`);
+  }
 }
 
 // --- Movement ---
@@ -563,6 +1078,10 @@ function updateCoin(coin: Coin, dt: number, now: number, isOwn: boolean): void {
     coin.moving = false;
     return;
   }
+  if (meetingOpen) {
+    coin.moving = false;
+    return;
+  }
 
   let moved = false;
   const distance = SPEED_PX_S * dt;
@@ -595,9 +1114,12 @@ function updateCoin(coin: Coin, dt: number, now: number, isOwn: boolean): void {
 }
 
 function updateCamera(): void {
+  if (!viewportEl) return;
   const own = ownCoin();
-  const targetX = clamp(own.pos.x - VIEWPORT_PX / 2, 0, Math.max(0, BOARD_W - VIEWPORT_PX));
-  const targetY = clamp(own.pos.y - VIEWPORT_PX / 2, 0, Math.max(0, BOARD_H - VIEWPORT_PX));
+  const vw = viewportEl.clientWidth || DEFAULT_VIEWPORT_PX;
+  const vh = viewportEl.clientHeight || DEFAULT_VIEWPORT_PX;
+  const targetX = clamp(own.pos.x - vw / 2, 0, Math.max(0, BOARD_W - vw));
+  const targetY = clamp(own.pos.y - vh / 2, 0, Math.max(0, BOARD_H - vh));
   if (spectator) {
     camera.x = 0;
     camera.y = 0;
@@ -649,8 +1171,11 @@ function frame(ts: number): void {
     if (el) syncCoinPosition(el, coin);
   }
 
+  updateTaskHold(ownCoin(), dt, ts);
   updateCamera();
   updateFog();
+  updateLegendIdle(ts);
+  updateActionButtons(ts);
 
   requestAnimationFrame(frame);
 }
@@ -667,6 +1192,9 @@ function main(): void {
   app.appendChild(toolbarEl);
   renderToolbar();
 
+  stageEl = document.createElement('div');
+  stageEl.className = 'stage';
+
   viewportEl = document.createElement('div');
   viewportEl.className = 'viewport';
   viewportEl.appendChild(renderBoard());
@@ -675,12 +1203,86 @@ function main(): void {
   fogEl.className = 'fog';
   viewportEl.appendChild(fogEl);
 
-  app.appendChild(viewportEl);
+  stageEl.appendChild(viewportEl);
+
+  taskListEl = document.createElement('ul');
+  const taskHud = document.createElement('div');
+  taskHud.className = 'task-hud';
+  const taskHeading = document.createElement('h3');
+  taskHeading.textContent = 'Tasks';
+  taskHud.appendChild(taskHeading);
+  taskHud.appendChild(taskListEl);
+  stageEl.appendChild(taskHud);
+
+  progressBarEl = document.createElement('div');
+  progressBarEl.className = 'progress-wrap';
+  const track = document.createElement('div');
+  track.className = 'progress-track';
+  const fill = document.createElement('div');
+  fill.className = 'progress-fill';
+  track.appendChild(fill);
+  progressBarEl.appendChild(track);
+  const label = document.createElement('div');
+  label.className = 'progress-label';
+  progressBarEl.appendChild(label);
+  stageEl.appendChild(progressBarEl);
+  renderTaskHud();
+
+  winEl = document.createElement('div');
+  winEl.className = 'win-overlay';
+  const winTitle = document.createElement('div');
+  winTitle.className = 'win-title';
+  winTitle.textContent = 'EPOCH COMPLETE — crew wins';
+  winEl.appendChild(winTitle);
+  stageEl.appendChild(winEl);
+
+  meetingEl = document.createElement('div');
+  meetingEl.className = 'meeting-overlay';
+  const meetingTitle = document.createElement('div');
+  meetingTitle.className = 'meeting-title';
+  meetingTitle.textContent = 'EMERGENCY MEETING';
+  meetingEl.appendChild(meetingTitle);
+  const portraitRow = document.createElement('div');
+  portraitRow.className = 'portrait-row';
+  meetingEl.appendChild(portraitRow);
+  const skipBtn = document.createElement('button');
+  skipBtn.className = 'skip-vote';
+  skipBtn.type = 'button';
+  skipBtn.textContent = 'SKIP VOTE';
+  skipBtn.addEventListener('click', closeMeeting);
+  meetingEl.appendChild(skipBtn);
+  stageEl.appendChild(meetingEl);
+
+  renderActionButtons(stageEl);
+  renderLegend(stageEl);
+
+  app.appendChild(stageEl);
 
   window.addEventListener('keydown', (ev) => {
     const key = ev.key.toLowerCase();
+    lastInputAt = performance.now();
+    if (legendEl) {
+      if (!RECOGNIZED_KEYS.has(key)) {
+        legendEl.classList.add('flash');
+        setTimeout(() => legendEl?.classList.remove('flash'), 400);
+      }
+      legendEl.classList.remove('dim');
+    }
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 'd'].includes(key)) {
       heldKeys.add(key);
+      ev.preventDefault();
+    } else if (key === 'e') {
+      heldKeys.add('e');
+      if (!ev.repeat) attemptWhitepaper(ownCoin());
+      ev.preventDefault();
+    } else if (key === 'q') {
+      if (!ev.repeat) attemptRug(performance.now());
+      ev.preventDefault();
+    } else if (key === 'r') {
+      if (!ev.repeat) attemptReport(performance.now());
+      ev.preventDefault();
+    } else if (key === 'f') {
+      if (!ev.repeat) toggleFullscreen();
       ev.preventDefault();
     } else if (key === 's') {
       if (!ev.repeat) toggleSpectator();
