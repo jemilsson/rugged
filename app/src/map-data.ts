@@ -50,7 +50,7 @@ const CORRIDOR_OVERLAP = 80; // must exceed ROOM_INSET (40) or a non-walkable ba
 
 export const ROOMS: RoomDef[] = [
   { id: 'poh', label: 'Proof of History', x: 100, y: 600 },
-  { id: 'validator', label: 'The Validator Room', x: 550, y: 100 },
+  { id: 'validator', label: 'The Farm', x: 550, y: 100 },
   { id: 'compliance', label: 'The Lockup', x: 550, y: 600 },
   { id: 'turbine', label: 'The Printer', x: 550, y: 1100 },
   { id: 'recovery', label: 'The Liquidity Pool', x: 1000, y: 100 },
@@ -102,7 +102,8 @@ export const ROOM_TILES: Tile[] = [
 export const TASK_TILES: Partial<Record<RoomName, TaskTile>> = {
   trading: { id: 'ape', x: 1, y: 1, name: 'Ape in' },
   gossip: { id: 'shill', x: 1, y: 1, name: 'Shill' },
-  turbine: { id: 'farm', x: 1, y: 1, name: 'Farm airdrops' },
+  turbine: { id: 'print', x: 1, y: 1, name: 'Print money' },
+  validator: { id: 'farm', x: 1, y: 1, name: 'Farm airdrops' },
   poh: { id: 'stake', x: 1, y: 1, name: 'Stake' },
   airdrop: { id: 'pump', x: 1, y: 1, name: 'Pump your coin' },
   gulfstream: { id: 'launch', x: 1, y: 1, name: 'Launch your token' },
