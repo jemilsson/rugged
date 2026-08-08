@@ -1,3 +1,5 @@
+![RUGGED — six tickers, one Rugger](assets/montage/social-preview.png)
+
 # Rugged
 
 Social deduction on Solana. Built in one day for the MagicBlock Solana
@@ -20,6 +22,23 @@ that guarantee in a day, and documents the TEE path as the next step.
 Every move, kill, and vote runs on a MagicBlock Ephemeral Rollup at
 10-50ms latency; the game settles back to Solana base layer only at
 lobby join, delegation, and game end.
+
+## Screenshots
+
+![Four concept screens: title/lobby, gameplay room, meeting vote, rug moment](assets/montage/screens-2x2.png)
+
+Clockwise from top left: the lobby (join under a ticker, six slots
+fill), a gameplay room (crew tile-walking near the reactor), the rug
+moment (Rugger cornering a crewmate), and a meeting vote (crew calling
+out suspects).
+
+## Coin lineup
+
+![Fourteen memecoin-avatar sprites: BONK, WIF, POPCAT, and others](assets/montage/coin-lineup.png)
+
+Every player wears a real Solana memecoin as their avatar, pulled from
+on-chain token metadata. Fourteen tickers ship in `assets/tokens/coins/`;
+a game picks six to eight per lobby.
 
 ## Architecture
 
@@ -64,7 +83,10 @@ programs-core/         Shared game logic (room graph, vote tally, role pick)
 app/                   Vite + TypeScript client, dual-connection (base + ER)
 flake.nix              Nix dev shell + cargo-check flake check
 Anchor.toml            Anchor workspace config
+assets/                Concept art, sprites, music, sfx, montages
 docs/demo-script.md    Shot-by-shot script for the demo video
+docs/submission.md     Hackathon submission form copy
+docs/checklist.md      Pre-record and submission runbook
 ```
 
 ## How to run
@@ -153,8 +175,8 @@ full build.
 - **Randomness**: `assign_roles` derives the Rugger index from the
   current slot as a placeholder (marked `TODO` in
   `programs/rugged/src/lib.rs`). Swapping in MagicBlock VRF (request +
-  callback, see `~/.claude/skills/magicblock/vrf.md`) is the next step
-  once the request/callback plumbing is wired to the ER connection.
+  callback) is the next step once the request/callback plumbing is
+  wired to the ER connection.
 - **Vote tally**: `resolve_meeting` takes a single `slashed` target
   chosen off-chain from client-aggregated votes, rather than iterating
   every `Player` account on-chain. A production version passes all
@@ -180,3 +202,20 @@ full build.
 
 `initialize_game`, `join`, `assign_roles`, `delegate`, `move_player`,
 `rug`, `call_meeting`, `vote`, `resolve_meeting`, `end_game`.
+
+## Deliverables
+
+Copy-paste sources: `docs/submission.md` (form text), `docs/demo-script.md`
+(shot list), `docs/checklist.md` (runbook). Fill in each placeholder
+before the submission deadline.
+
+| Deliverable | Status | Link / ID |
+| --- | --- | --- |
+| Repository | Ready | https://github.com/jemilsson/rugged |
+| Live demo | Pending first deploy | https://rugged-game.fly.dev |
+| Demo video | Not recorded | PLACEHOLDER — see `docs/demo-script.md` |
+| Program ID (devnet) | Not deployed | PLACEHOLDER — see `docs/submission.md` |
+
+## License
+
+MIT. See `LICENSE`.
